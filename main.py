@@ -47,10 +47,10 @@ def main():
     digest = build_digest(classified, buckets)
 
     log.info(
-        f'Digest: {digest["total"]} reviews | '
-        f'Negative: {digest["by_sentiment"].get("Negative", 0)} | '
-        f'Score: {digest["sentiment_score"]}/10 | '
-        f'Buckets: {[b["name"] for b in buckets]}'
+    f'Digest: {digest["total"]} reviews | '
+    f'Negative: {digest["by_sentiment"].get("Negative", 0)} | '
+    f'Signal rate: {digest.get("negative_signal_rate", 0)}% | '
+    f'Buckets: {[b["name"] for b in buckets]}'
     )
 
     from bot.email_publisher import publish_via_email

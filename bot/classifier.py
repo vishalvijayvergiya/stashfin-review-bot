@@ -1,8 +1,17 @@
 """
 classifier.py
-Sends reviews to Gemini in batches of BATCH_SIZE.
-Reviews with no text are auto-classified without using any API quota.
-Returns reviews enriched with: category, sub_category, sentiment, root_cause.
+=============
+Two-pass dynamic classification using Gemini.
+
+Pass 1 — Bucket Discovery:
+    Sends all review texts to Gemini and asks it to identify what issue
+    categories actually exist this week, with a team-owner tag per bucket.
+    Previous week's buckets are passed as a hint so names stay consistent.
+
+Pass 2 — Classification:
+    Classifies each review into the discovered buckets (batched).
+
+No hardcoded taxonomy — new product areas and issues are discovered automatically.
 """
 from __future__ import annotations
 import json
@@ -14,101 +23,64 @@ from bot.config import GEMINI_API_KEY, GEMINI_MODEL, BATCH_SIZE
 log = logging.getLogger(__name__)
 genai.configure(api_key=GEMINI_API_KEY)
 
-TAXONOMY = {
-    'Fraud / Scam': [
-        'Fee-Then-Reject (No Refund)',
-        'General Fraud Accusation',
-        'Credit Bureau Reporting Error',
-        'Misleading Interest / Marketing',
-        'Auto-Debit Set Up Before Approval',
-        'Impersonation / Social Engineering',
-    ],
-    'Fees & Charges': [
-        'High Interest Rate',
-        'Non-Refundable Processing Fee',
-        'Bounce / Overdue Penalty Charged Incorrectly',
-    ],
-    'EMI / Payment Issues': [
-        'Duplicate / Double EMI Deduction',
-        'NOC / Loan Closure Delay',
-        'Manual Payment Not Reflected',
-        'Payment Flow Broken',
-    ],
-    'Loan Eligibility / Processing': [
-        'Stuck Under Review Indefinitely',
-        'Eligibility / Approval Confusion',
-        'Rejected After Long Wait',
-    ],
-    'Customer Support': [
-        'No Phone / Helpline Access',
-        'No Response to Email / Ticket',
-        'Bot-Only / Unhelpful Chat',
-    ],
-    'Technical Issues': [
-        'Withdrawal / Transfer Error',
-        'App Crash / Not Loading',
-        'Device Incompatibility / Login Blocked',
-    ],
-    'KYC / Verification Issues': [
-        'Video KYC — Agent Not Available',
-        'Bank / Profile Update Stuck',
-    ],
-    'Data Privacy / Harassment': [
-        'Harassment / Excessive Data Access',
-    ],
-    'Refund Issues': [
-        'Fee Refund Pending',
-        'Duplicate Deduction Refund Pending',
-    ],
-    'Digital Gold / Rewards Issues': [
-        'Redemption / Access Blocked',
-    ],
-    'UI/UX & Feature Feedback': [
-        'Feature Removed / UX Complaint',
-    ],
-    'Other / Vague': [
-        'Short Generic Negative',
-        'Unspecified Complaint',
-    ],
-}
+# ── Pass 1: Bucket discovery prompt ───────────────────────────────────────────
 
-TAXONOMY_STR = '\n'.join(
-    f'{cat}:\n' + '\n'.join(f'  - {s}' for s in subs)
-    for cat, subs in TAXONOMY.items()
-)
+DISCOVERY_PROMPT = """You are analyzing Google Play Store reviews for StashFin, an Indian fintech app
+offering personal loans, EMI, credit line, UPI payments, and bill payments.
 
-PROMPT = """You are classifying Google Play Store reviews for StashFin, an Indian fintech lending app (personal loans, EMI, credit line, bill payments).
+Read the {n} reviews below and identify every distinct issue category/bucket present.
 
-Reviews may be in English, Hindi, Hinglish, or other Indian languages. Understand all of them.
+For each bucket return a JSON object with:
+  - "name":        short 2-5 word bucket name (e.g. "Fraud / Fee Scam", "UPI Activation Failure",
+                   "App Crash", "EMI Double Deduction", "NOC Delay", "High Interest Rate")
+  - "team_tag":    which internal team primarily owns this issue. Pick ONE from:
+                   Tech | Product | Risk | CX | Payments | Ops | Compliance
+  - "description": one sentence — the root cause pattern shared across reviews in this bucket
+  - "count":       approximate number of reviews in this bucket
 
-Classify each numbered review below. Return a JSON array — one object per review.
+CONSISTENCY RULES (important):
+If the following buckets appeared last week, reuse the same name if the same issue appears again.
+Only create a new bucket name if it is genuinely a new/different issue not covered below.
+{prev_buckets_hint}
 
-Each object must have exactly these fields:
-- "id": integer (the review number, 1-based)
-- "category": string (pick ONE from the taxonomy below)
-- "sub_category": string (pick ONE sub-category that matches the category)
-- "sentiment": "Negative" | "Neutral" | "Positive"
-- "root_cause": string (one sentence — the UNDERLYING system or process failure, not what the user said. E.g. not "user says EMI deducted twice" but "auto-debit lacks idempotency check — manual payment not reconciled before ECS presentment")
+LANGUAGE NOTE: Reviews may be in English, Hindi, or Hinglish. Understand all of them.
+Common patterns: "farzi/fraud/froud" = scam accusation, "kat liya/cut ho gaya" = money deducted,
+"wapas nahi" = not refunded, "nahi chal raha" = not working, "band karo" = stop this.
 
-TAXONOMY:
-{taxonomy}
-
-CLASSIFICATION RULES:
-1. Base classification on what the user actually describes, not just emotional words.
-2. "frud/froud/farji/scam/fake" alone → Other/Vague unless user describes a specific pattern.
-3. Fee paid then loan rejected/stuck with no refund → Fraud / Scam → Fee-Then-Reject (No Refund).
-4. EMI deducted twice in one month → EMI / Payment Issues → Duplicate / Double EMI Deduction.
-5. App shows error on withdrawal → Technical Issues → Withdrawal / Transfer Error.
-6. No customer care number / no response → Customer Support.
-7. Video KYC agent not available → KYC / Verification Issues.
-8. Sentiment: Positive if text reads positively despite low star. Neutral only if text is absent or completely indecipherable.
-9. Hinglish hints: "kat liya/cut ho gaya"=deducted, "wapas nahi"=not refunded, "bekar/ghatiya"=very bad, "farzi"=fake, "bhi nahi mila"=not received.
-
-OUTPUT: Return ONLY a valid JSON array. No markdown, no explanation, nothing else.
+Return ONLY a valid JSON array of bucket objects. No markdown, no explanation, nothing else.
 
 REVIEWS:
+{reviews_text}"""
+
+
+# ── Pass 2: Classification prompt ──────────────────────────────────────────────
+
+CLASSIFY_PROMPT = """Classify each numbered review into exactly one of the buckets listed below.
+
+BUCKETS (discovered from this week's reviews):
+{buckets_list}
+
+For each review return a JSON object with:
+  - "id":          integer (the review number, 1-based)
+  - "bucket":      exact bucket name from the list above (copy it exactly)
+  - "sentiment":   "Negative" | "Neutral" | "Positive"
+  - "root_cause":  one sentence — the specific underlying failure for THIS review
+                   (e.g. not "user says EMI deducted twice" but "auto-debit ran twice in same
+                   cycle — manual payment not reconciled before ECS presentment")
+
+RULES:
+1. Use the bucket whose description best matches the review's core complaint.
+2. Sentiment: Positive if the text reads positively despite a low star tap.
+   Neutral only if the text is genuinely absent or completely indecipherable.
+3. If a review touches multiple issues, pick the primary/most severe one.
+
+Return ONLY a valid JSON array. No markdown, no explanation, nothing else.
+
+REVIEWS TO CLASSIFY:
 {reviews_block}"""
 
+
+# ── Gemini caller with retry ───────────────────────────────────────────────────
 
 def _call_gemini(prompt: str, attempt: int = 0) -> str:
     try:
@@ -121,77 +93,123 @@ def _call_gemini(prompt: str, attempt: int = 0) -> str:
     except Exception as e:
         if attempt < 3:
             wait = 2 ** (attempt + 1)
-            log.warning(f'Gemini error ({e}), retry in {wait}s...')
+            log.warning(f'Gemini error: {e} — retrying in {wait}s')
             time.sleep(wait)
             return _call_gemini(prompt, attempt + 1)
-        log.error(f'Gemini failed after 3 retries: {e}')
         raise
 
 
-def _parse_response(raw: str, batch_size: int) -> list[dict]:
-    # Strip markdown fences if Gemini adds them
+def _parse_json(raw: str, fallback: list) -> list:
     raw = raw.strip()
     if raw.startswith('```'):
         raw = '\n'.join(raw.split('\n')[1:])
         raw = raw.rsplit('```', 1)[0].strip()
     try:
         return json.loads(raw)
-    except json.JSONDecodeError:
-        log.error(f'JSON parse failed. Raw: {raw[:300]}')
-        return [{'id': i+1, 'category': 'Other / Vague',
-                 'sub_category': 'Unspecified Complaint',
-                 'sentiment': 'Negative',
-                 'root_cause': 'Auto-classification failed — needs manual review'}
-                for i in range(batch_size)]
+    except json.JSONDecodeError as e:
+        log.error(f'JSON parse failed: {e} | Raw snippet: {raw[:300]}')
+        return fallback
 
 
-def classify_reviews(reviews: list[dict]) -> list[dict]:
-    if not reviews:
+# ── Pass 1: Discover buckets ───────────────────────────────────────────────────
+
+def discover_buckets(reviews: list[dict], prev_buckets: list[dict]) -> list[dict]:
+    """
+    Ask Gemini to identify what issue buckets exist in this week's reviews.
+    Returns a list of bucket dicts: {name, team_tag, description, count}
+    """
+    text_reviews = [r for r in reviews if r.get('has_text')]
+    if not text_reviews:
+        log.warning('No text reviews — skipping bucket discovery')
         return []
 
-    # Reviews with no text — classify instantly without Gemini
-    no_text    = [r for r in reviews if not r['has_text']]
-    has_text   = [r for r in reviews if r['has_text']]
+    # Build previous-bucket hint
+    if prev_buckets:
+        hint_lines = '\n'.join(f'  - {b["name"]} ({b.get("team_tag","")})' for b in prev_buckets)
+        prev_hint  = f'Previously seen buckets:\n{hint_lines}'
+    else:
+        prev_hint = '(First run — no previous buckets to reference)'
 
+    reviews_text = '\n'.join(
+        f'{i+1}. [{r["rating"]}★] {r["text"]}' for i, r in enumerate(text_reviews)
+    )
+
+    prompt   = DISCOVERY_PROMPT.format(
+        n                 = len(text_reviews),
+        reviews_text      = reviews_text,
+        prev_buckets_hint = prev_hint,
+    )
+    log.info(f'Pass 1: discovering buckets from {len(text_reviews)} text reviews...')
+    raw      = _call_gemini(prompt)
+    buckets  = _parse_json(raw, fallback=[])
+
+    if not buckets:
+        log.warning('Bucket discovery returned nothing — using generic fallback bucket')
+        buckets = [{'name': 'General Complaints', 'team_tag': 'Product',
+                    'description': 'Mixed negative feedback', 'count': len(text_reviews)}]
+
+    log.info(f'Pass 1 complete — discovered {len(buckets)} buckets: {[b["name"] for b in buckets]}')
+    return buckets
+
+
+# ── Pass 2: Classify reviews into buckets ─────────────────────────────────────
+
+def classify_reviews(reviews: list[dict], buckets: list[dict]) -> list[dict]:
+    """
+    Classify all reviews into the discovered buckets.
+    Reviews with no text are auto-tagged without using any API quota.
+    """
+    # Auto-tag no-text reviews
+    no_text = [r for r in reviews if not r.get('has_text')]
     for r in no_text:
-        r.update({'category': 'Uncategorized / No Text',
-                  'sub_category': 'No Text',
-                  'sentiment': 'Neutral',
-                  'root_cause': 'User left no review text — star rating only'})
+        r.update({
+            'bucket':     'Uncategorized / No Text',
+            'sentiment':  'Neutral',
+            'root_cause': 'User left no review text — star rating only',
+            'team_tag':   '',
+        })
 
+    has_text = [r for r in reviews if r.get('has_text')]
     if not has_text:
         return no_text
 
-    # Batch the text reviews
-    batches = [has_text[i:i+BATCH_SIZE] for i in range(0, len(has_text), BATCH_SIZE)]
-    log.info(f'Classifying {len(has_text)} text reviews in {len(batches)} batches...')
+    # Build bucket list string for the prompt
+    buckets_list = '\n'.join(
+        f'- {b["name"]} [{b.get("team_tag","")}]: {b.get("description","")}'
+        for b in buckets
+    )
+    # Build a name→team_tag lookup for enriching results
+    team_lookup = {b['name']: b.get('team_tag', '') for b in buckets}
+
+    batches  = [has_text[i:i+BATCH_SIZE] for i in range(0, len(has_text), BATCH_SIZE)]
+    log.info(f'Pass 2: classifying {len(has_text)} reviews in {len(batches)} batches...')
 
     for idx, batch in enumerate(batches):
         log.info(f'  Batch {idx+1}/{len(batches)}')
         reviews_block = '\n'.join(
             f'{i+1}. [{r["rating"]}★] {r["text"]}' for i, r in enumerate(batch)
         )
-        prompt  = PROMPT.format(taxonomy=TAXONOMY_STR, reviews_block=reviews_block)
+        prompt  = CLASSIFY_PROMPT.format(
+            buckets_list  = buckets_list,
+            reviews_block = reviews_block,
+        )
         raw     = _call_gemini(prompt)
-        results = _parse_response(raw, len(batch))
-        res_map = {item['id']: item for item in results if 'id' in item}
+        results = _parse_json(raw, fallback=[])
+        res_map = {item['id']: item for item in results if isinstance(item, dict) and 'id' in item}
 
         for i, review in enumerate(batch):
-            res = res_map.get(i + 1, {})
-            cat = res.get('category', 'Other / Vague')
-            sub = res.get('sub_category', 'Unspecified Complaint')
-            if cat not in TAXONOMY and cat != 'Uncategorized / No Text':
-                cat = 'Other / Vague'
-                sub = 'Unspecified Complaint'
+            res    = res_map.get(i + 1, {})
+            bucket = res.get('bucket', 'General Complaints')
             review.update({
-                'category':    cat,
-                'sub_category': sub,
-                'sentiment':   res.get('sentiment', 'Negative'),
-                'root_cause':  res.get('root_cause', ''),
+                'bucket':     bucket,
+                'category':   bucket,          # keep 'category' alias for digest compatibility
+                'sentiment':  res.get('sentiment', 'Negative'),
+                'root_cause': res.get('root_cause', ''),
+                'team_tag':   team_lookup.get(bucket, ''),
             })
 
         if idx < len(batches) - 1:
-            time.sleep(2)   # respect free-tier rate limit
+            time.sleep(2)
 
-    log.info('Classification done.')
+    log.info('Pass 2 complete.')
     return no_text + has_text

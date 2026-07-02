@@ -1,7 +1,7 @@
 """
 main.py — StashFin Review Bot entry point.
 Run directly: python main.py
-Or automated via GitHub Actions every week.
+Automated via GitHub Actions every Monday 9am IST.
 """
 import logging
 import sys
@@ -17,36 +17,46 @@ log = logging.getLogger('ReviewBot')
 def main():
     log.info('=== StashFin Review Bot starting ===')
 
-    # Step 1 — Fetch
-    log.info('Step 1/4: Fetching reviews from Play Store...')
+    # Step 1 — Fetch 1-2-3★ reviews from Play Store
+    log.info('Step 1/5: Fetching reviews...')
     from bot.fetcher import fetch_reviews
     reviews = fetch_reviews()
     if not reviews:
         log.warning('No reviews fetched — nothing to process. Exiting.')
         return
 
-    # Step 2 — Classify
-    log.info('Step 2/4: Classifying reviews with Gemini...')
-    from bot.classifier import classify_reviews
-    classified = classify_reviews(reviews)
+    # Step 2 — Load previous buckets for consistency hint
+    log.info('Step 2/5: Loading previous run data...')
+    from bot.digest import load_last_run
+    last_run     = load_last_run()
+    prev_buckets = last_run.get('buckets', [])
+    log.info(f'Previous buckets: {[b["name"] for b in prev_buckets] or "none (first run)"}')
 
-    # Step 3 — Build digest
-    log.info('Step 3/4: Building digest...')
+    # Step 3 — Discover this week's issue buckets (Pass 1)
+    log.info('Step 3/5: Discovering issue buckets with Gemini (Pass 1)...')
+    from bot.classifier import discover_buckets, classify_reviews
+    buckets = discover_buckets(reviews, prev_buckets)
+
+    # Step 4 — Classify each review into discovered buckets (Pass 2)
+    log.info('Step 4/5: Classifying reviews (Pass 2)...')
+    classified = classify_reviews(reviews, buckets)
+
+    # Step 5 — Build digest and send
+    log.info('Step 5/5: Building digest and sending email...')
     from bot.digest import build_digest, save_last_run
-    digest = build_digest(classified)
+    digest = build_digest(classified, buckets)
 
-    log.info(f'Digest summary: {digest["total"]} reviews | '
-             f'Negative: {digest["by_sentiment"].get("Negative",0)} | '
-             f'Sentiment score: {digest["sentiment_score"]}/10')
-    if digest['spikes']:
-        log.info(f'Spikes detected: {[s[0] for s in digest["spikes"]]}')
+    log.info(
+        f'Digest: {digest["total"]} reviews | '
+        f'Negative: {digest["by_sentiment"].get("Negative", 0)} | '
+        f'Score: {digest["sentiment_score"]}/10 | '
+        f'Buckets: {[b["name"] for b in buckets]}'
+    )
 
-    # Step 4 — Publish
-    log.info('Step 4/4: Sending emails...')
     from bot.email_publisher import publish_via_email
     publish_via_email(digest)
 
-    # Save this run's data for next week's trend comparison
+    # Save for next week's trend comparison
     save_last_run(digest)
     log.info('=== Bot run complete ===')
 

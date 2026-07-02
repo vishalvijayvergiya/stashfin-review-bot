@@ -26,10 +26,7 @@ jobs:
           GEMINI_API_KEY:    ${{ secrets.GEMINI_API_KEY }}
           GMAIL_SENDER:      ${{ secrets.GMAIL_SENDER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-          EMAIL_PRODUCT:     ${{ secrets.EMAIL_PRODUCT }}
-          EMAIL_TECH:        ${{ secrets.EMAIL_TECH }}
-          EMAIL_CX:          ${{ secrets.EMAIL_CX }}
-          EMAIL_RISK:        ${{ secrets.EMAIL_RISK }}
+          EMAIL_ALL:         ${{ secrets.EMAIL_ALL }}
         run: python main.py
 
       - name: Save last run data for next week trend comparison

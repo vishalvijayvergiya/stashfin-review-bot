@@ -1,17 +1,8 @@
 """
-classifier.py
-=============
-Two-pass dynamic classification using Gemini.
-
-Pass 1 — Bucket Discovery:
-    Sends all review texts to Gemini and asks it to identify what issue
-    categories actually exist this week, with a team-owner tag per bucket.
-    Previous week's buckets are passed as a hint so names stay consistent.
-
-Pass 2 — Classification:
-    Classifies each review into the discovered buckets (batched).
-
-No hardcoded taxonomy — new product areas and issues are discovered automatically.
+classifier.py — Two-pass dynamic classification using Gemini 1.5 Flash.
+Pass 1: discover issue buckets from a sample of reviews (1 API call).
+Pass 2: classify all reviews into those buckets in batches.
+Reviews with no text are auto-tagged — zero API cost.
 """
 from __future__ import annotations
 import json
@@ -23,76 +14,56 @@ from bot.config import GEMINI_API_KEY, GEMINI_MODEL, BATCH_SIZE
 log = logging.getLogger(__name__)
 genai.configure(api_key=GEMINI_API_KEY)
 
-# ── Pass 1: Bucket discovery prompt ───────────────────────────────────────────
+DISCOVERY_SAMPLE = 30
 
-DISCOVERY_PROMPT = """You are analyzing Google Play Store reviews for StashFin, an Indian fintech app
-offering personal loans, EMI, credit line, UPI payments, and bill payments.
+DISCOVERY_PROMPT = """You are analyzing Google Play Store reviews for StashFin, an Indian fintech
+app (personal loans, EMI, credit line, UPI payments, bill payments).
 
-Read the {n} reviews below and identify every distinct issue or concern bucket present.
+Read the {n} reviews and identify every distinct issue or concern bucket present.
 
-IMPORTANT CONTEXT — read before classifying:
-Not all negative reviews reflect a genuine product failure. Some may reflect:
-- User misunderstanding of a policy (e.g. non-refundable fee stated in T&C)
-- User expectation mismatch (e.g. expected 0% interest but did not read full terms)
-- One-sided account where full context is unknown
-This does NOT mean ignoring these reviews — they still affect ratings and reflect perception.
-But if a cluster of reviews suggests users misunderstood something rather than the product
-failing, create a separate bucket called "User Awareness / Expectation Mismatch" for those.
+CONTEXT: Not all negative reviews confirm a product failure. Some reflect user
+misunderstanding of policy (e.g. non-refundable fee in T&C) or expectation mismatch.
+If such reviews appear, create a "User Awareness / Expectation Mismatch" bucket.
 
-For each bucket return a JSON object with:
-  - "name":        short 2-5 word bucket name
-                   (e.g. "Upfront Fee / Loan Scam", "UPI Activation Failure",
-                   "App Crash / Bug", "High Interest Rate", "User Awareness / Expectation Mismatch")
-  - "team_tag":    which internal team primarily owns this. Pick ONE:
-                   Tech | Product | Risk | CX | Payments | Ops | Compliance
-  - "description": one sentence — the pattern shared across reviews in this bucket
-  - "count":       approximate number of reviews in this bucket
+For each bucket return a JSON object:
+  "name"        — 2-5 word name (e.g. "Upfront Fee Scam", "UPI Activation Failure")
+  "team_tag"    — ONE of: Tech | Product | Risk | CX | Payments | Ops | Compliance
+  "description" — one sentence — the shared root cause pattern
+  "count"       — approximate count
 
-CONSISTENCY RULES:
-If the following buckets appeared last week, reuse the same name if the same issue appears.
-Only create a new name if it is genuinely a different issue.
-{prev_buckets_hint}
+CONSISTENCY — reuse names from previous weeks where same issue appears:
+{prev_hint}
 
-LANGUAGE NOTE: Reviews may be in English, Hindi, or Hinglish.
-"farzi/fraud/froud" = scam, "kat liya" = deducted, "wapas nahi" = not refunded,
-"nahi chal raha" = not working, "band karo" = stop this, "pata nahi tha" = did not know.
+LANGUAGE: Reviews may be English, Hindi, Hinglish. Understand all.
+"farzi/froud"=scam, "kat liya"=deducted, "wapas nahi"=not refunded,
+"nahi chal raha"=not working, "pata nahi tha"=did not know.
 
-Return ONLY a valid JSON array of bucket objects. No markdown, no explanation, nothing else.
+Return ONLY valid JSON array. No markdown.
 
 REVIEWS:
 {reviews_text}"""
 
-
-# ── Pass 2: Classification prompt ─────────────────────────────────────────────
-
-CLASSIFY_PROMPT = """Classify each numbered review into exactly one of the buckets listed below.
-
-BUCKETS (discovered from this week's reviews):
+CLASSIFY_PROMPT = """Classify each numbered review into exactly one of these buckets:
 {buckets_list}
 
-For each review return a JSON object with:
-  - "id":          integer (the review number, 1-based)
-  - "bucket":      exact bucket name from the list above (copy exactly)
-  - "sentiment":   "Negative" | "Neutral" | "Positive"
-  - "root_cause":  max 12 words — the specific failure or misunderstanding in THIS review.
-                   Be concrete. Not "user is unhappy" but "paid ₹475 fee, no loan given, no refund".
-                   For awareness issues: "user unaware fee is non-refundable per T&C".
+For each review return:
+  "id"         — integer (1-based)
+  "bucket"     — exact bucket name from the list
+  "sentiment"  — "Negative" | "Neutral" | "Positive"
+  "root_cause" — max 12 words — specific failure in THIS review
+                 (e.g. "paid Rs 475 fee, loan rejected, no refund")
+                 For awareness issues: "user unaware fee non-refundable per T&C"
 
 RULES:
-1. Pick the bucket whose description best matches the review's core complaint.
-2. Sentiment: Positive if text reads positively despite low star.
-   Neutral only if text is genuinely absent or indecipherable.
-3. If review touches multiple issues, pick the primary one.
-4. Reviews that seem to be user error or policy misunderstanding →
-   "User Awareness / Expectation Mismatch" bucket if that bucket was discovered.
+1. Pick the best-matching bucket. Positive sentiment if text reads positively despite low star.
+   Neutral only if text is absent or completely indecipherable.
+2. "User Awareness / Expectation Mismatch" for policy misunderstanding, not product failures.
 
-Return ONLY a valid JSON array. No markdown, no explanation, nothing else.
+Return ONLY valid JSON array. No markdown.
 
-REVIEWS TO CLASSIFY:
+REVIEWS:
 {reviews_block}"""
 
-
-# ── Gemini caller with retry ───────────────────────────────────────────────────
 
 def _call_gemini(prompt: str, attempt: int = 0) -> str:
     try:
@@ -104,103 +75,71 @@ def _call_gemini(prompt: str, attempt: int = 0) -> str:
         return resp.text.strip()
     except Exception as e:
         if attempt < 3:
-            wait = 2 ** (attempt + 1)
-            log.warning(f'Gemini error: {e} — retrying in {wait}s')
+            wait = 4 ** (attempt + 1)
+            log.warning(f'Gemini error: {e} — retry in {wait}s')
             time.sleep(wait)
             return _call_gemini(prompt, attempt + 1)
         raise
 
 
-def _parse_json(raw: str, fallback: list) -> list:
+def _parse(raw: str, fallback: list) -> list:
     raw = raw.strip()
     if raw.startswith('```'):
-        raw = '\n'.join(raw.split('\n')[1:])
-        raw = raw.rsplit('```', 1)[0].strip()
+        raw = '\n'.join(raw.split('\n')[1:]).rsplit('```', 1)[0].strip()
     try:
         return json.loads(raw)
     except json.JSONDecodeError as e:
-        log.error(f'JSON parse failed: {e} | Raw snippet: {raw[:300]}')
+        log.error(f'JSON parse error: {e} | raw: {raw[:200]}')
         return fallback
 
-
-# ── Pass 1: Discover buckets ───────────────────────────────────────────────────
 
 def discover_buckets(reviews: list[dict], prev_buckets: list[dict]) -> list[dict]:
     text_reviews = [r for r in reviews if r.get('has_text')]
     if not text_reviews:
-        log.warning('No text reviews — skipping bucket discovery')
-        return []
+        return [{'name': 'General Complaints', 'team_tag': 'Product',
+                 'description': 'Mixed negative feedback', 'count': 0}]
 
-    if prev_buckets:
-        hint_lines = '\n'.join(
-            f'  - {b["name"]} ({b.get("team_tag", "")})' for b in prev_buckets
-        )
-        prev_hint = f'Previously seen buckets:\n{hint_lines}'
-    else:
-        prev_hint = '(First run — no previous buckets to reference)'
+    sample = text_reviews[:DISCOVERY_SAMPLE]
+    prev_hint = ('Previously seen buckets — reuse names where same issue appears:\n' +
+                 '\n'.join(f'  - {b["name"]}' for b in prev_buckets)
+                 ) if prev_buckets else '(First run — no previous buckets)'
 
-    reviews_text = '\n'.join(
-        f'{i+1}. [{r["rating"]}★] {r["text"]}' for i, r in enumerate(text_reviews)
-    )
-    prompt  = DISCOVERY_PROMPT.format(
-        n                 = len(text_reviews),
-        reviews_text      = reviews_text,
-        prev_buckets_hint = prev_hint,
-    )
-    log.info(f'Pass 1: discovering buckets from {len(text_reviews)} text reviews...')
-    raw     = _call_gemini(prompt)
-    buckets = _parse_json(raw, fallback=[])
+    reviews_text = '\n'.join(f'{i+1}. [{r["rating"]}★] {r["text"]}' for i,r in enumerate(sample))
+    prompt = DISCOVERY_PROMPT.format(n=len(sample), reviews_text=reviews_text, prev_hint=prev_hint)
+
+    log.info(f'Pass 1: discovering buckets from {len(sample)} reviews...')
+    buckets = _parse(_call_gemini(prompt), fallback=[])
 
     if not buckets:
-        log.warning('Bucket discovery returned nothing — using fallback bucket')
         buckets = [{'name': 'General Complaints', 'team_tag': 'Product',
                     'description': 'Mixed negative feedback', 'count': len(text_reviews)}]
 
-    log.info(f'Pass 1 complete — {len(buckets)} buckets: {[b["name"] for b in buckets]}')
+    log.info(f'Pass 1 done: {len(buckets)} buckets — {[b["name"] for b in buckets]}')
     return buckets
 
 
-# ── Pass 2: Classify reviews into buckets ─────────────────────────────────────
-
 def classify_reviews(reviews: list[dict], buckets: list[dict]) -> list[dict]:
-    no_text = [r for r in reviews if not r.get('has_text')]
-    for r in no_text:
-        r.update({
-            'bucket':     'Uncategorized / No Text',
-            'category':   'Uncategorized / No Text',
-            'sentiment':  'Neutral',
-            'root_cause': 'No review text — star rating only',
-            'team_tag':   '',
-        })
-
+    no_text  = [r for r in reviews if not r.get('has_text')]
     has_text = [r for r in reviews if r.get('has_text')]
+
+    for r in no_text:
+        r.update({'bucket': 'Uncategorized / No Text', 'category': 'Uncategorized / No Text',
+                  'sentiment': 'Neutral', 'root_cause': 'No text — star rating only', 'team_tag': ''})
+
     if not has_text:
         return no_text
 
-    buckets_list = '\n'.join(
-        f'- {b["name"]}: {b.get("description", "")}' for b in buckets
-    )
-    team_lookup = {b['name']: b.get('team_tag', '') for b in buckets}
-    batches     = [has_text[i:i+BATCH_SIZE] for i in range(0, len(has_text), BATCH_SIZE)]
+    buckets_list = '\n'.join(f'- {b["name"]}: {b.get("description","")}' for b in buckets)
+    team_lookup  = {b['name']: b.get('team_tag', '') for b in buckets}
+    batches      = [has_text[i:i+BATCH_SIZE] for i in range(0, len(has_text), BATCH_SIZE)]
 
     log.info(f'Pass 2: classifying {len(has_text)} reviews in {len(batches)} batches...')
-
     for idx, batch in enumerate(batches):
         log.info(f'  Batch {idx+1}/{len(batches)}')
-        reviews_block = '\n'.join(
-            f'{i+1}. [{r["rating"]}★] {r["text"]}' for i, r in enumerate(batch)
-        )
-        prompt  = CLASSIFY_PROMPT.format(
-            buckets_list  = buckets_list,
-            reviews_block = reviews_block,
-        )
-        raw     = _call_gemini(prompt)
-        results = _parse_json(raw, fallback=[])
-        res_map = {
-            item['id']: item
-            for item in results
-            if isinstance(item, dict) and 'id' in item
-        }
+        block   = '\n'.join(f'{i+1}. [{r["rating"]}★] {r["text"]}' for i,r in enumerate(batch))
+        prompt  = CLASSIFY_PROMPT.format(buckets_list=buckets_list, reviews_block=block)
+        results = _parse(_call_gemini(prompt), fallback=[])
+        res_map = {item['id']: item for item in results if isinstance(item,dict) and 'id' in item}
 
         for i, review in enumerate(batch):
             res    = res_map.get(i + 1, {})
@@ -214,7 +153,7 @@ def classify_reviews(reviews: list[dict], buckets: list[dict]) -> list[dict]:
             })
 
         if idx < len(batches) - 1:
-            time.sleep(2)
+            time.sleep(1)
 
-    log.info('Pass 2 complete.')
+    log.info('Pass 2 done.')
     return no_text + has_text

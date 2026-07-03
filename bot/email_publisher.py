@@ -174,11 +174,24 @@ def _sparkline(counts: list[int], color: str, new_this_week: bool = False) -> st
     return (f'<div style="display:flex;align-items:flex-end;gap:2px;height:{max_h}px;'
             f'margin-top:6px;">{bars}</div>')
 
-
+def _sub_keywords(data: dict) -> str:
+    subs = data.get('sub_categories', {})
+    if not subs:
+        return ''
+    top = sorted(subs.items(), key=lambda x: -x[1])[:2]
+    return ''.join(
+        f'<div style="font-size:9px;color:#666;margin-top:3px;'
+        f'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'
+        f'• {s[:30]}{"…" if len(s)>30 else ""}</div>'
+        for s, n in top
+    )
 # ── Issue card ─────────────────────────────────────────────────────
 
 def _issue_card(cat: str, count: int, delta: int, prev: int,
-                color: str, sparkline_counts: list[int], is_new: bool) -> str:
+                color: str, sparkline_counts: list[int], is_new: bool,
+                data: dict = None) -> str:
+    if data is None:
+        data = {}
     short = cat[:22] + ('…' if len(cat)>22 else '')
     hdr_color = '#00875A' if is_new else color
     spark = _sparkline(sparkline_counts, color, is_new)
@@ -195,10 +208,11 @@ def _issue_card(cat: str, count: int, delta: int, prev: int,
             f'<tr><td style="background:{hdr_color};padding:6px 10px;">'
             f'<span style="color:#fff;font-size:10px;font-weight:600;line-height:1.3;">{short}</span>'
             f'</td></tr>'
-            f'<tr><td style="padding:8px 10px 8px;">'
-            f'<div style="font-size:26px;font-weight:700;color:{num_color};line-height:1;">{count}</div>'
+            f'<tr><td style="padding:6px 8px 6px;">'
+            f'<div style="font-size:22px;font-weight:700;color:{num_color};line-height:1;text-align:center;">{count}</div>'
             f'<div style="font-size:11px;margin-top:2px;">{delta_html}</div>'
             f'{spark}'
+            f'{_sub_keywords(data)}'
             f'</td></tr>'
             f'</table>')
 
@@ -276,7 +290,8 @@ def _build_html(digest: dict) -> str:
                 # Build sparkline counts from trend_data
                 series = trend_data.get(cat, [])
                 sp_counts = [pt.get('count',0) for pt in series]
-                card_html = _issue_card(cat, count, delta, prev, color, sp_counts, is_new)
+                card_html = _issue_card(cat, count, delta, prev, color, sp_counts, is_new,
+                        data=digest['by_category'].get(cat, {}))
                 row_cells += f'<td width="31%" valign="top">{card_html}</td>'
                 if j < 2 and i+j+1 < len(display):
                     row_cells += '<td width="3%"></td>'
@@ -381,8 +396,7 @@ def publish_via_email(digest: dict) -> None:
     spikes    = digest.get('spikes', [])
     top_names = ' · '.join(c for c,*_ in top[:3]) if top else 'No issues'
     spike_flg = ' ⚠️' if spikes else ''
-    subject   = (f'stashfin Reviews | {digest["date_range"]} | '
-                 f'{digest["total"]} signals{spike_flg} | {top_names}')
+    subject = f'stashfin Reviews | {digest["date_range"]} | {digest["total"]} signals'
 
     msg            = MIMEMultipart('alternative')
     msg['Subject'] = subject

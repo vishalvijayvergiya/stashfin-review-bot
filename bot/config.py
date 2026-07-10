@@ -11,13 +11,13 @@ import os
 
 # ── App ────────────────────────────────────────────────────────────
 PLAY_PACKAGE_NAME    = 'com.stashfin.android'
-DAYS_TO_FETCH        = 7     # ← CHANGE TO 7 AFTER FIRST TEST RUN
-MAX_REVIEWS_PER_STAR = 850    # 850 × 3 stars = 2550 capacity
+DAYS_TO_FETCH        = 7
+MAX_REVIEWS_PER_STAR = 850
 
 # ── Gemini ─────────────────────────────────────────────────────────
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
-GEMINI_MODEL   = 'gemini-2.5-flash'    # 1500 req/day free
-BATCH_SIZE     = 30
+GEMINI_MODEL   = 'gemini-2.5-flash'
+BATCH_SIZE     = 35
 
 # ── Gmail ──────────────────────────────────────────────────────────
 GMAIL_SENDER       = os.environ.get('GMAIL_SENDER', '')
@@ -28,27 +28,28 @@ EMAIL_ALL = [
     if e.strip()
 ]
 
-# ── GitHub Pages detail page URL ───────────────────────────────────
+# ── GitHub Pages ───────────────────────────────────────────────────
 PAGES_URL = 'https://vishalvijayvergiya.github.io/stashfin-review-bot/'
 
 # ── History ────────────────────────────────────────────────────────
-MAX_HISTORY_WEEKS  = 8    # weeks stored in history.json
-TABLE_WEEKS        = 4    # weeks shown in the comparison table
+MAX_HISTORY_WEEKS = 8
+TABLE_WEEKS       = 4
 
-# ── Brand colors ───────────────────────────────────────────────────
+# ── StashFin brand colors ──────────────────────────────────────────
 BRAND_CORAL    = '#FF4040'
 BRAND_BLUE     = '#1B3A6B'
-BRAND_CORAL_LT = '#FFF5F5'
+BRAND_CORAL_LT = '#FFF0F0'
 BRAND_BLUE_LT  = '#EEF2F9'
 
-# Issue color palette — assigned by rank (top issue = color 0, etc.)
+# Issue colors — strictly StashFin red and blue shades only
+# Alternates between coral red and brand blue variants
 ISSUE_COLORS = [
-    '#FF4040',   # rank 1 — coral red
-    '#1B3A6B',   # rank 2 — brand blue
-    '#E07800',   # rank 3 — orange
-    '#6B35A0',   # rank 4 — purple
-    '#0077B6',   # rank 5 — teal
-    '#C0392B',   # rank 6 — dark red
-    '#2C6E49',   # rank 7 — forest green
-    '#555555',   # rank 8+ — gray
+    '#FF4040',   # StashFin coral red        (rank 1)
+    '#1B3A6B',   # StashFin brand blue       (rank 2)
+    '#CC2020',   # Darker red                (rank 3)
+    '#2C5F9E',   # Medium blue               (rank 4)
+    '#FF7070',   # Lighter red               (rank 5)
+    '#4A7BC5',   # Lighter blue              (rank 6)
+    '#991515',   # Deep red                  (rank 7+)
+    '#0F2548',   # Deep navy                 (rank 8+)
 ]

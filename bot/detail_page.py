@@ -258,12 +258,31 @@ canvas{{max-height:300px;}}
 
 <div class="container">
 
-  <div style="margin:20px 0;text-align:center;">
-    <div style="background:#fff;border-radius:12px;padding:20px 32px;
-                border:1.5px solid {BRAND_CORAL_LT};display:inline-block;text-align:center;">
-      <div style="font-size:48px;font-weight:700;color:{BRAND_CORAL};line-height:1;">{total}</div>
-      <div style="font-size:13px;color:#888;margin-top:6px;">1-2-3★ reviews this week</div>
-      <div style="font-size:12px;color:{BRAND_BLUE};margin-top:5px;font-weight:600;">{date_range}</div>
+  <div style="background:{BRAND_BLUE};padding:16px 24px;margin:20px 0;
+              border-radius:10px;display:flex;align-items:center;
+              justify-content:space-between;flex-wrap:wrap;gap:12px;">
+    <div>
+      <span style="font-size:36px;font-weight:700;color:#FF7070;">{total}</span>
+      <span style="font-size:13px;color:rgba(255,255,255,.7);margin-left:10px;">
+        1-2-3★ reviews &nbsp;·&nbsp; {date_range}
+      </span>
+    </div>
+    <div style="display:flex;gap:20px;">
+      <div style="text-align:center;">
+        <div style="font-size:20px;font-weight:700;color:#FF7070;">
+          {digest.get('star_counts',{{}}).get(1,0)}</div>
+        <div style="font-size:10px;color:rgba(255,255,255,.5);margin-top:2px;">1★</div>
+      </div>
+      <div style="text-align:center;">
+        <div style="font-size:20px;font-weight:700;color:#FF9090;">
+          {digest.get('star_counts',{{}}).get(2,0)}</div>
+        <div style="font-size:10px;color:rgba(255,255,255,.5);margin-top:2px;">2★</div>
+      </div>
+      <div style="text-align:center;">
+        <div style="font-size:20px;font-weight:700;color:#FFB0B0;">
+          {digest.get('star_counts',{{}}).get(3,0)}</div>
+        <div style="font-size:10px;color:rgba(255,255,255,.5);margin-top:2px;">3★</div>
+      </div>
     </div>
   </div>
 

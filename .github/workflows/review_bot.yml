@@ -2,8 +2,20 @@ name: StashFin Review Bot
 
 on:
   schedule:
-    - cron: '30 3 * * 1'   # Every Monday 9:00am IST (3:30am UTC)
-  workflow_dispatch:         # Manual trigger from GitHub UI
+    # Daily scrape — runs every day at 11:00pm IST (5:30pm UTC)
+    # Captures that day's reviews before midnight
+    - cron: '30 17 * * *'
+
+    # Weekly email — runs every Monday 9:00am IST (3:30am UTC)
+    # Classifies the last 7 days and sends the email
+    - cron: '30 3 * * 1'
+
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Run mode: full (scrape+classify+email) or scrape_only'
+        required: false
+        default: 'full'
 
 jobs:
   run-bot:
@@ -29,6 +41,10 @@ jobs:
           GMAIL_SENDER:       ${{ secrets.GMAIL_SENDER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           EMAIL_ALL:          ${{ secrets.EMAIL_ALL }}
+          # Set RUN_MODE based on what triggered this
+          # Monday 3:30am UTC = weekly email run
+          # All other times = scrape only (no email, no Gemini)
+          RUN_MODE: ${{ github.event.inputs.mode || 'auto' }}
         run: python main.py
 
       - name: Save history and publish detail page
@@ -36,5 +52,5 @@ jobs:
           git config user.name  "stashfin-review-bot"
           git config user.email "bot@stashfin.com"
           git add history.json last_run.json index.html || true
-          git diff --staged --quiet || git commit -m "chore: weekly run $(date +%Y-%m-%d) [skip ci]"
+          git diff --staged --quiet || git commit -m "chore: run $(date +%Y-%m-%d) [skip ci]"
           git push || true

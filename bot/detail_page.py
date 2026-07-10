@@ -1,6 +1,7 @@
 """
 detail_page.py — Generates index.html for GitHub Pages.
 Full detail view with Chart.js trend, historical table, all issue cards.
+KPI: single ribbon showing 1-2-3★ count + per-star breakdown.
 """
 from __future__ import annotations
 import json
@@ -95,11 +96,7 @@ def _issue_card_html(cat: str, count: int, delta: int,
 
 def generate(digest: dict, output_path: str = 'index.html') -> None:
     date_range   = digest['date_range']
-    prev_date    = digest.get('prev_date_range', 'N/A')
     total        = digest['total']
-    weekly_total = digest.get('weekly_total', 0)
-    avg_rating   = digest.get('avg_rating', 0.0)
-    signal_rate  = digest.get('signal_rate', 0)
     top_issues   = digest['top_issues']
     trend_data   = digest.get('trend_data', {})
     history      = digest.get('history', [])
@@ -107,10 +104,12 @@ def generate(digest: dict, output_path: str = 'index.html') -> None:
     by_category  = digest.get('by_category', {})
     spikes       = digest.get('spikes', [])
     generated    = digest.get('generated_at', '')
+    star_counts  = digest.get('star_counts', {})
     new_cats     = {c for c,n,l in spikes if l=='NEW'}
 
     display = [(c,n,d,t,p) for c,n,d,t,p in top_issues if c not in EXCLUDE]
 
+    # Chart.js datasets
     chart_weeks  = [wk.get('date_range','') for wk in history[-7:]] + [date_range]
     chart_labels = chart_weeks
     datasets     = []
@@ -133,6 +132,7 @@ def generate(digest: dict, output_path: str = 'index.html') -> None:
             'pointHoverRadius':       6,
         })
 
+    # Historical table
     table_history = history[-(TABLE_WEEKS-1):]
     table_weeks   = table_history + [{'date_range': date_range, 'by_category':
                                        {cat: {'count': n} for cat,n,*_ in display}}]
@@ -170,8 +170,7 @@ def generate(digest: dict, output_path: str = 'index.html') -> None:
             Grows automatically — each Monday a new column is added (up to {TABLE_WEEKS} weeks shown)</div>
           <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:400px;">
             <thead><tr style="background:{BRAND_BLUE_LT};">
-              <th style="padding:8px 10px;text-align:left;color:{BRAND_BLUE};
-                         font-size:12px;">Issue</th>
+              <th style="padding:8px 10px;text-align:left;color:{BRAND_BLUE};font-size:12px;">Issue</th>
               {thead_cols}
             </tr></thead>
             <tbody>{tbody_rows}</tbody>
@@ -182,6 +181,7 @@ def generate(digest: dict, output_path: str = 'index.html') -> None:
                            f'border:1px solid #E8EEF6;margin-bottom:20px;color:#AAA;font-size:13px;">'
                            f'Historical comparison table will appear from week 2 onwards.</div>')
 
+    # All issue cards
     all_cards = ''.join(
         _issue_card_html(cat, count, delta,
                          by_category.get(cat, {}),
@@ -190,6 +190,7 @@ def generate(digest: dict, output_path: str = 'index.html') -> None:
         for cat, count, delta, tag, prev in display
     )
 
+    # Chart.js script
     chart_js = ''
     if len(chart_weeks) >= 2 and datasets:
         chart_js = f"""
@@ -223,6 +224,33 @@ def generate(digest: dict, output_path: str = 'index.html') -> None:
             }});
         }});
         </script>"""
+
+    # KPI ribbon — full width, dark blue background
+    kpi_ribbon = (
+        f'<div style="background:{BRAND_BLUE};padding:16px 24px;margin:20px 0;'
+        f'border-radius:10px;display:flex;align-items:center;'
+        f'justify-content:space-between;flex-wrap:wrap;gap:16px;">'
+        f'<div>'
+        f'<span style="font-size:42px;font-weight:700;color:#FF7070;line-height:1;">{total}</span>'
+        f'<span style="font-size:13px;color:rgba(255,255,255,.7);margin-left:12px;">'
+        f'1-2-3★ reviews &nbsp;·&nbsp; {date_range}</span>'
+        f'</div>'
+        f'<div style="display:flex;gap:24px;">'
+        f'<div style="text-align:center;">'
+        f'<div style="font-size:22px;font-weight:700;color:#FF7070;">{star_counts.get(1, 0)}</div>'
+        f'<div style="font-size:10px;color:rgba(255,255,255,.5);margin-top:2px;">1★</div>'
+        f'</div>'
+        f'<div style="text-align:center;">'
+        f'<div style="font-size:22px;font-weight:700;color:#FF9090;">{star_counts.get(2, 0)}</div>'
+        f'<div style="font-size:10px;color:rgba(255,255,255,.5);margin-top:2px;">2★</div>'
+        f'</div>'
+        f'<div style="text-align:center;">'
+        f'<div style="font-size:22px;font-weight:700;color:#FFB3B3;">{star_counts.get(3, 0)}</div>'
+        f'<div style="font-size:10px;color:rgba(255,255,255,.5);margin-top:2px;">3★</div>'
+        f'</div>'
+        f'</div>'
+        f'</div>'
+    )
 
     html = f"""<!DOCTYPE html>
 <html lang="en"><head>
@@ -258,33 +286,7 @@ canvas{{max-height:300px;}}
 
 <div class="container">
 
-  <div style="background:{BRAND_BLUE};padding:16px 24px;margin:20px 0;
-              border-radius:10px;display:flex;align-items:center;
-              justify-content:space-between;flex-wrap:wrap;gap:12px;">
-    <div>
-      <span style="font-size:36px;font-weight:700;color:#FF7070;">{total}</span>
-      <span style="font-size:13px;color:rgba(255,255,255,.7);margin-left:10px;">
-        1-2-3★ reviews &nbsp;·&nbsp; {date_range}
-      </span>
-    </div>
-    <div style="display:flex;gap:20px;">
-      <div style="text-align:center;">
-        <div style="font-size:20px;font-weight:700;color:#FF7070;">
-          {digest.get('star_counts',{{}}).get(1,0)}</div>
-        <div style="font-size:10px;color:rgba(255,255,255,.5);margin-top:2px;">1★</div>
-      </div>
-      <div style="text-align:center;">
-        <div style="font-size:20px;font-weight:700;color:#FF9090;">
-          {digest.get('star_counts',{{}}).get(2,0)}</div>
-        <div style="font-size:10px;color:rgba(255,255,255,.5);margin-top:2px;">2★</div>
-      </div>
-      <div style="text-align:center;">
-        <div style="font-size:20px;font-weight:700;color:#FFB0B0;">
-          {digest.get('star_counts',{{}}).get(3,0)}</div>
-        <div style="font-size:10px;color:rgba(255,255,255,.5);margin-top:2px;">3★</div>
-      </div>
-    </div>
-  </div>
+  {kpi_ribbon}
 
   <div style="background:#fff;border-radius:12px;padding:20px;
                border:1px solid #E8EEF6;margin-bottom:20px;">

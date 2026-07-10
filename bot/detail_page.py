@@ -24,7 +24,6 @@ def _delta_badge(n: int) -> str:
 
 
 def _short_date(date_range: str) -> str:
-    """Extract short week label from date range string. e.g. '19 Jun – 03 Jul 2026' → '19 Jun'"""
     if '–' in date_range:
         return date_range.split('–')[0].strip()
     if '-' in date_range:
@@ -112,11 +111,10 @@ def generate(digest: dict, output_path: str = 'index.html') -> None:
 
     display = [(c,n,d,t,p) for c,n,d,t,p in top_issues if c not in EXCLUDE]
 
-    # ── Chart.js data ──────────────────────────────────────────────
     chart_weeks  = [wk.get('date_range','') for wk in history[-7:]] + [date_range]
     chart_labels = chart_weeks
     datasets     = []
-    colors_list  = [BRAND_CORAL,'#1B3A6B','#E07800','#6B35A0','#0077B6','#C0392B','#2C6E49']
+    colors_list  = [BRAND_CORAL,'#1B3A6B','#CC2020','#2C5F9E','#FF7070','#4A7BC5']
 
     for i, (cat, count, *_) in enumerate(display[:6]):
         color  = color_map.get(cat, colors_list[i % len(colors_list)])
@@ -124,17 +122,17 @@ def generate(digest: dict, output_path: str = 'index.html') -> None:
         cnt_by_date = {pt.get('date',''): pt.get('count',0) for pt in series}
         values = [cnt_by_date.get(wk, 0) for wk in chart_weeks]
         datasets.append({
-            'label':           cat,
-            'data':            values,
-            'borderColor':     color,
-            'backgroundColor': color + '20',
-            'tension':         0.3,
-            'fill':            False,
-            'pointRadius':     4,
-            'pointHoverRadius':6,
+            'label':                  cat,
+            'data':                   values,
+            'borderColor':            color,
+            'backgroundColor':        color + '20',
+            'tension':                0.4,
+            'cubicInterpolationMode': 'monotone',
+            'fill':                   False,
+            'pointRadius':            4,
+            'pointHoverRadius':       6,
         })
 
-    # ── Historical comparison table ────────────────────────────────
     table_history = history[-(TABLE_WEEKS-1):]
     table_weeks   = table_history + [{'date_range': date_range, 'by_category':
                                        {cat: {'count': n} for cat,n,*_ in display}}]
@@ -184,7 +182,6 @@ def generate(digest: dict, output_path: str = 'index.html') -> None:
                            f'border:1px solid #E8EEF6;margin-bottom:20px;color:#AAA;font-size:13px;">'
                            f'Historical comparison table will appear from week 2 onwards.</div>')
 
-    # ── All issue cards ────────────────────────────────────────────
     all_cards = ''.join(
         _issue_card_html(cat, count, delta,
                          by_category.get(cat, {}),
@@ -193,7 +190,6 @@ def generate(digest: dict, output_path: str = 'index.html') -> None:
         for cat, count, delta, tag, prev in display
     )
 
-    # ── Chart.js script ────────────────────────────────────────────
     chart_js = ''
     if len(chart_weeks) >= 2 and datasets:
         chart_js = f"""
@@ -228,7 +224,6 @@ def generate(digest: dict, output_path: str = 'index.html') -> None:
         }});
         </script>"""
 
-    # ── Full HTML ──────────────────────────────────────────────────
     html = f"""<!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="utf-8">
@@ -240,10 +235,6 @@ body{{margin:0;padding:0;background:#F5F7FA;
      font-family:'Helvetica Neue',Arial,sans-serif;color:#1A1A2E;}}
 .container{{max-width:900px;margin:0 auto;padding:0 16px 32px;}}
 canvas{{max-height:300px;}}
-@media(max-width:600px){{
-  .kpi-grid{{display:block!important;}}
-  .kpi-tile{{margin-bottom:12px!important;}}
-}}
 </style>
 </head><body>
 
@@ -267,30 +258,12 @@ canvas{{max-height:300px;}}
 
 <div class="container">
 
-  <div class="kpi-grid"
-       style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:20px 0;">
-    <div class="kpi-tile" style="background:#fff;border-radius:10px;padding:14px 16px;
-                                  border:1px solid #E8EEF6;text-align:center;">
-      <div style="font-size:30px;font-weight:700;color:{BRAND_BLUE};line-height:1;">
-        {weekly_total or '—'}</div>
-      <div style="font-size:11px;color:#888;margin-top:3px;">Total reviews</div>
-    </div>
-    <div class="kpi-tile" style="background:#fff;border-radius:10px;padding:14px 16px;
-                                  border:1px solid #FFE5E5;text-align:center;">
-      <div style="font-size:30px;font-weight:700;color:{BRAND_CORAL};line-height:1;">{total}</div>
-      <div style="font-size:11px;color:#888;margin-top:3px;">1-2-3★ reviews</div>
-    </div>
-    <div class="kpi-tile" style="background:#fff;border-radius:10px;padding:14px 16px;
-                                  border:1px solid #E8EEF6;text-align:center;">
-      <div style="font-size:30px;font-weight:700;color:{BRAND_BLUE};line-height:1;">
-        {avg_rating}{'★' if avg_rating else ''}</div>
-      <div style="font-size:11px;color:#888;margin-top:3px;">Avg rating this week</div>
-    </div>
-    <div class="kpi-tile" style="background:#fff;border-radius:10px;padding:14px 16px;
-                                  border:1px solid #E8EEF6;text-align:center;">
-      <div style="font-size:30px;font-weight:700;color:#E07800;line-height:1;">
-        {signal_rate}<span style="font-size:16px;">%</span></div>
-      <div style="font-size:11px;color:#888;margin-top:3px;">Negative signal rate</div>
+  <div style="margin:20px 0;text-align:center;">
+    <div style="background:#fff;border-radius:12px;padding:20px 32px;
+                border:1.5px solid {BRAND_CORAL_LT};display:inline-block;text-align:center;">
+      <div style="font-size:48px;font-weight:700;color:{BRAND_CORAL};line-height:1;">{total}</div>
+      <div style="font-size:13px;color:#888;margin-top:6px;">1-2-3★ reviews this week</div>
+      <div style="font-size:12px;color:{BRAND_BLUE};margin-top:5px;font-weight:600;">{date_range}</div>
     </div>
   </div>
 

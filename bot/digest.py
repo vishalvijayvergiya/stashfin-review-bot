@@ -1,9 +1,5 @@
 """
 digest.py — Weekly digest builder with rolling history.
-
-history.json stores up to MAX_HISTORY_WEEKS of weekly data.
-Each run appends a new entry and the historical table/chart grow automatically.
-No Gemini data in history — only actual counts from runs.
 """
 from __future__ import annotations
 import json
@@ -52,19 +48,25 @@ def build_digest(reviews: list[dict], buckets: list[dict]) -> dict:
     prev_counts = {k: v.get('count', 0) for k, v in prev_week.get('by_category', {}).items()}
     prev_total  = prev_week.get('total', 0)
     prev_date   = prev_week.get('date_range', None)
-    prev_rate   = prev_week.get('avg_rating', None)
 
-    now        = datetime.now(timezone.utc)
-    start      = now - timedelta(days=DAYS_TO_FETCH)
-    date_range = f'{start.strftime("%d %b")} – {now.strftime("%d %b %Y")}'
+    # Get date range from fetcher (window_start → window_end, today excluded)
+    if reviews:
+        window_start = reviews[0].get('window_start', '')
+        window_end   = reviews[0].get('window_end', '')
+        date_range   = f'{window_start} – {window_end}' if window_start and window_end else ''
+    else:
+        now        = datetime.now(timezone.utc)
+        yesterday  = now - timedelta(days=1)
+        start      = yesterday - timedelta(days=DAYS_TO_FETCH - 1)
+        date_range = f'{start.strftime("%d %b %Y")} – {yesterday.strftime("%d %b %Y")}'
 
-    # Weekly stats from fetcher
-    weekly_total  = reviews[0].get('weekly_total', 0) if reviews else 0
-    avg_rating    = reviews[0].get('avg_rating', 0.0) if reviews else 0.0
-    signal_rate   = reviews[0].get('signal_rate', 0)  if reviews else 0
-    star_counts   = reviews[0].get('star_counts', {}) if reviews else {}
+    # Weekly stats
+    weekly_total = reviews[0].get('weekly_total', 0) if reviews else 0
+    avg_rating   = reviews[0].get('avg_rating', 0.0)  if reviews else 0.0
+    signal_rate  = reviews[0].get('signal_rate', 0)   if reviews else 0
+    star_counts  = reviews[0].get('star_counts', {})  if reviews else {}
 
-    # Aggregate by bucket
+    # Aggregate
     by_category   = defaultdict(lambda: {'count': 0, 'sub_categories': defaultdict(int),
                                           'examples': [], 'team_tag': '', 'prev_count': 0})
     sentiment_ctr = Counter()
@@ -82,7 +84,7 @@ def build_digest(reviews: list[dict], buckets: list[dict]) -> dict:
         bkt['team_tag']   = team_lookup.get(cat, r.get('team_tag', ''))
         bkt['prev_count'] = prev_counts.get(cat, 0)
         if rc:
-            bkt['sub_categories'][rc[:80] + ('…' if len(rc)>80 else '')] += 1
+            bkt['sub_categories'][rc[:80] + ('…' if len(rc) > 80 else '')] += 1
         if text and len(bkt['examples']) < 3:
             bkt['examples'].append(f'[{r["rating"]}★] {text[:180]}{"…" if len(text)>180 else ""}')
 
@@ -92,7 +94,6 @@ def build_digest(reviews: list[dict], buckets: list[dict]) -> dict:
 
     total = len(reviews)
 
-    # Top issues sorted by count
     top_issues = sorted(
         [(cat, d['count'], d['delta'], d['team_tag'], d['prev_count'])
          for cat, d in by_category.items()
@@ -100,12 +101,9 @@ def build_digest(reviews: list[dict], buckets: list[dict]) -> dict:
         key=lambda x: -x[1]
     )
 
-    # Assign colors by rank
-    color_map = {}
-    for i, (cat, *_) in enumerate(top_issues):
-        color_map[cat] = ISSUE_COLORS[min(i, len(ISSUE_COLORS)-1)]
+    color_map = {cat: ISSUE_COLORS[min(i, len(ISSUE_COLORS)-1)]
+                 for i, (cat, *_) in enumerate(top_issues)}
 
-    # Spikes
     spikes = []
     for cat, count, delta, tag, prev in top_issues:
         if prev == 0 and count >= 3:
@@ -113,7 +111,6 @@ def build_digest(reviews: list[dict], buckets: list[dict]) -> dict:
         elif prev > 0 and delta > 0 and delta / prev >= 0.5:
             spikes.append((cat, count, f'+{int(delta/prev*100)}%'))
 
-    # Trend data per issue (for chart)
     trend_data = {}
     for cat, count, *_ in top_issues:
         weekly = []
@@ -125,26 +122,26 @@ def build_digest(reviews: list[dict], buckets: list[dict]) -> dict:
 
     current_entry = {
         'date_range':   date_range,
-        'generated_at': now.strftime('%Y-%m-%d'),
+        'generated_at': datetime.now(timezone.utc).strftime('%Y-%m-%d'),
         'total':        total,
         'weekly_total': weekly_total,
         'avg_rating':   avg_rating,
         'signal_rate':  signal_rate,
         'star_counts':  star_counts,
-        'buckets':      [{'name': b['name'], 'team_tag': b.get('team_tag','')} for b in buckets],
+        'buckets':      [{'name': b['name'], 'team_tag': b.get('team_tag', '')} for b in buckets],
         'by_category':  {cat: {'count': d['count']} for cat, d in by_category.items()},
     }
 
     return {
         'date_range':      date_range,
         'prev_date_range': prev_date,
-        'generated_at':    now.strftime('%d %b %Y'),
+        'generated_at':    datetime.now(timezone.utc).strftime('%d %b %Y'),
         'total':           total,
         'prev_total':      prev_total,
         'total_delta':     total - prev_total,
         'weekly_total':    weekly_total,
         'avg_rating':      avg_rating,
-        'prev_avg_rating': prev_rate,
+        'prev_avg_rating': prev_week.get('avg_rating', None),
         'signal_rate':     signal_rate,
         'star_counts':     star_counts,
         'by_sentiment':    dict(sentiment_ctr),

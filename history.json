@@ -1,66 +1,6 @@
 {
   "weeks": [
     {
-      "date_range": "26 Jun \u2013 03 Jul 2026",
-      "generated_at": "2026-07-03",
-      "total": 68,
-      "weekly_total": 1228,
-      "avg_rating": 4.8,
-      "signal_rate": 5.5,
-      "star_counts": {
-        "1": 52,
-        "2": 8,
-        "3": 8,
-        "4": 17,
-        "5": 1143
-      },
-      "buckets": [
-        {
-          "name": "Fraud & Upfront Fee Scam",
-          "team_tag": "Compliance"
-        },
-        {
-          "name": "High Interest & Hidden Fees",
-          "team_tag": "Risk"
-        },
-        {
-          "name": "Poor Customer Support",
-          "team_tag": "CX"
-        },
-        {
-          "name": "Payment & Auto-Debit Issues",
-          "team_tag": "Payments"
-        },
-        {
-          "name": "App Technical Glitches",
-          "team_tag": "Tech"
-        }
-      ],
-      "by_category": {
-        "Payment & Auto-Debit Issues": {
-          "count": 6
-        },
-        "High Interest & Hidden Fees": {
-          "count": 17
-        },
-        "Poor Customer Support": {
-          "count": 8
-        },
-        "Fraud & Upfront Fee Scam": {
-          "count": 20
-        },
-        "App Technical Glitches": {
-          "count": 15
-        },
-        "Neutral": {
-          "count": 1
-        },
-        "Positive": {
-          "count": 1
-        }
-      }
-    },
-    {
       "date_range": "29 Jun \u2013 06 Jul 2026",
       "generated_at": "2026-07-06",
       "total": 73,
@@ -367,6 +307,21 @@
         "3": 5,
         "4": 19,
         "5": 1296
+      },
+      "buckets": [],
+      "by_category": {}
+    },
+    {
+      "date_range": "05 Jul 2026 \u2013 11 Jul 2026",
+      "generated_at": "2026-07-12",
+      "total": 73,
+      "weekly_total": 1569,
+      "star_counts": {
+        "1": 61,
+        "2": 7,
+        "3": 5,
+        "4": 15,
+        "5": 1481
       },
       "buckets": [],
       "by_category": {}

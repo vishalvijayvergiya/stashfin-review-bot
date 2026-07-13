@@ -1,60 +1,6 @@
 {
   "weeks": [
     {
-      "date_range": "29 Jun \u2013 06 Jul 2026",
-      "generated_at": "2026-07-06",
-      "total": 73,
-      "weekly_total": 1222,
-      "avg_rating": 4.8,
-      "signal_rate": 6.0,
-      "star_counts": {
-        "1": 58,
-        "2": 11,
-        "3": 4,
-        "4": 22,
-        "5": 1127
-      },
-      "buckets": [
-        {
-          "name": "Fraud & Upfront Fee Scam",
-          "team_tag": "Compliance"
-        },
-        {
-          "name": "High Interest & Hidden Fees",
-          "team_tag": "Product"
-        },
-        {
-          "name": "Poor Customer Support",
-          "team_tag": "CX"
-        },
-        {
-          "name": "Payment & Auto-Debit Issues",
-          "team_tag": "Payments"
-        },
-        {
-          "name": "App Technical Glitches",
-          "team_tag": "Tech"
-        }
-      ],
-      "by_category": {
-        "High Interest & Hidden Fees": {
-          "count": 22
-        },
-        "Fraud & Upfront Fee Scam": {
-          "count": 23
-        },
-        "App Technical Glitches": {
-          "count": 13
-        },
-        "Payment & Auto-Debit Issues": {
-          "count": 10
-        },
-        "Poor Customer Support": {
-          "count": 5
-        }
-      }
-    },
-    {
       "date_range": "03 Jul 2026 \u2013 09 Jul 2026",
       "generated_at": "2026-07-10",
       "total": 73,
@@ -325,6 +271,60 @@
       },
       "buckets": [],
       "by_category": {}
+    },
+    {
+      "date_range": "06 Jul 2026 \u2013 12 Jul 2026",
+      "generated_at": "2026-07-13",
+      "total": 63,
+      "weekly_total": 1348,
+      "avg_rating": 4.8,
+      "signal_rate": 4.7,
+      "star_counts": {
+        "1": 53,
+        "2": 5,
+        "3": 5,
+        "4": 11,
+        "5": 1274
+      },
+      "buckets": [
+        {
+          "name": "Fraud / Fee Scam",
+          "team_tag": "Risk"
+        },
+        {
+          "name": "Payment Issues",
+          "team_tag": "Payments"
+        },
+        {
+          "name": "Loan Processing Issues",
+          "team_tag": "Ops"
+        },
+        {
+          "name": "App Technical Issues",
+          "team_tag": "Tech"
+        },
+        {
+          "name": "Customer Support",
+          "team_tag": "CX"
+        }
+      ],
+      "by_category": {
+        "Loan Processing Issues": {
+          "count": 11
+        },
+        "App Technical Issues": {
+          "count": 5
+        },
+        "Fraud / Fee Scam": {
+          "count": 18
+        },
+        "Payment Issues": {
+          "count": 18
+        },
+        "Customer Support": {
+          "count": 11
+        }
+      }
     }
   ]
 }

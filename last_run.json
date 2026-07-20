@@ -1,15 +1,61 @@
 {
-  "date_range": "12 Jul 2026 \u2013 18 Jul 2026",
-  "generated_at": "2026-07-19",
-  "total": 43,
-  "weekly_total": 1288,
+  "date_range": "13 Jul 2026 \u2013 19 Jul 2026",
+  "generated_at": "2026-07-20",
+  "total": 42,
+  "weekly_total": 1143,
+  "avg_rating": 4.8,
+  "signal_rate": 3.7,
   "star_counts": {
-    "1": 39,
+    "1": 38,
     "2": 1,
     "3": 3,
-    "4": 12,
-    "5": 1233
+    "4": 13,
+    "5": 1088
   },
-  "buckets": [],
-  "by_category": {}
+  "buckets": [
+    {
+      "name": "Credit Builder Fee Issues",
+      "team_tag": "Product"
+    },
+    {
+      "name": "Payment and Refund Issues",
+      "team_tag": "Payments"
+    },
+    {
+      "name": "Customer Support Failures",
+      "team_tag": "CX"
+    },
+    {
+      "name": "Loan Processing and Rejection",
+      "team_tag": "Ops"
+    },
+    {
+      "name": "Data Privacy Concerns",
+      "team_tag": "Compliance"
+    },
+    {
+      "name": "High Interest & Charges",
+      "team_tag": "Risk"
+    }
+  ],
+  "by_category": {
+    "Credit Builder Fee Issues": {
+      "count": 8
+    },
+    "Payment and Refund Issues": {
+      "count": 7
+    },
+    "Data Privacy Concerns": {
+      "count": 3
+    },
+    "Customer Support Failures": {
+      "count": 10
+    },
+    "Loan Processing and Rejection": {
+      "count": 9
+    },
+    "High Interest & Charges": {
+      "count": 5
+    }
+  }
 }
